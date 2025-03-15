@@ -1,0 +1,70 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Middleware\Api;
+
+
+use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Hyperf\HttpServer\Contract\RequestInterface;
+use Hyperf\HttpServer\Contract\ResponseInterface as HttpResponse;
+use Hyperf\Utils\Context;
+use Upp\Service\ParseToken;
+use Upp\Traits\HelpTrait;
+use Upp\Traits\RedisTrait;
+
+class WallteMiddleware implements MiddlewareInterface
+{
+    use RedisTrait;
+    use HelpTrait;
+
+    /**
+     * @var ContainerInterface
+     */
+    protected $container;
+
+    /**
+     * @var RequestInterface
+     */
+    protected $request;
+
+    /**
+     * @var HttpResponse
+     */
+    protected $response;
+
+
+    public function __construct(ContainerInterface $container, HttpResponse $response, RequestInterface $request)
+    {
+        $this->container = $container;
+        $this->response = $response;
+        $this->request = $request;
+    }
+
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    {
+        try {
+            // 根据具体业务判断逻辑走向，这里假设用户携带的token有效
+            $Authori = $request->getHeaderLine('Wallet-zation');
+            $token=!empty($Authori) ? trim($request->getHeaderLine('Wallet-zation')) : false;
+            /** @var  $ParseToken ParseToken*/
+            $parseToken = $this->app(ParseToken::class);
+            [$key,$name,$type] = $parseToken->doToken($token,'api');
+            $queryParams = $request->getQueryParams();
+            $queryParams['userId']= $key;
+            $queryParams['userName']= $name;
+            $queryParams['apptype']= $type;
+            $request = $request->withQueryParams($queryParams);
+            Context::set(ServerRequestInterface::class, $request);
+            return $handler->handle($request);
+        } catch(\Throwable $e) {
+            return $this->json($e->getMessage(),$e->getCode());
+        }
+    }
+
+
+}
